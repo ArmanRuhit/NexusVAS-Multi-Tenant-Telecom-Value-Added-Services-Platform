@@ -8,7 +8,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.13</version>
+        <version>3.4.1</version>
         <relativePath/>
     </parent>
 
@@ -21,13 +21,22 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-cloud.version>2025.1.1</spring-cloud.version>
+        <spring-cloud.version>2024.0.0</spring-cloud.version>
         <spring-ai.version>1.0.0-M5</spring-ai.version>
     </properties>
 
     <modules>
         <module>common-lib</module>
-        <!-- Add other modules later -->
+        <module>api-gateway</module>
+        <module>auth-service</module>
+        <module>operator-service</module>
+        <module>subscription-service</module>
+        <module>billing-service</module>
+        <module>content-service</module>
+        <module>campaign-service</module>
+        <module>notification-service</module>
+        <module>analytics-service</module>
+        <module>ai-service</module>
     </modules>
 
     <dependencyManagement>
@@ -36,6 +45,14 @@
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
                 <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring AI BOM -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

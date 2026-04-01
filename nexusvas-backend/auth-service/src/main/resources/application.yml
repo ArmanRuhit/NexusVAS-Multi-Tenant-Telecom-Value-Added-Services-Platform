@@ -1,0 +1,102 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/auth_db
+    username: ${POSTGRES_USER:nexusvas}
+    password: ${POSTGRES_PASSWORD:nexusvas123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+  # ── Flyway ────────────────────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    clean-disabled: true
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+
+  # ── Kafka ─────────────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: auth-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: dev.armanruhit.nexusvas.*
+
+  # ── Security ──────────────────────────────────────────────────────────────
+  security:
+    oauth2:
+      authorizationserver:
+        issuer: ${AUTH_ISSUER:http://localhost:8081}
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER:http://localhost:8081}
+
+# ── Custom Auth Config ──────────────────────────────────────────────────────
+auth:
+  jwt:
+    access-token-ttl-minutes: 15
+    refresh-token-ttl-days: 7
+    issuer: ${AUTH_ISSUER:http://localhost:8081}
+  otp:
+    ttl-minutes: 5
+    max-attempts: 3
+  login:
+    max-failed-attempts: 5
+    lock-duration-minutes: 15
+
+# ── Actuator ─────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,flyway
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  level:
+    dev.armanruhit.nexusvas: DEBUG
+    org.springframework.security: INFO
+    org.flywaydb: INFO

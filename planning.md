@@ -109,6 +109,18 @@ This project replicates that exact domain: a backend platform that allows multip
 
 ## Step-by-Step Implementation
 
+### Implementation Status
+- ✅ Phase 1 — Project Skeleton & Infrastructure (complete)
+- ✅ Phase 1B — Flyway Migrations (complete)
+- ✅ Phase 2 — Auth Service (complete: entities, repositories, SecurityConfig, AuthService, TokenService, RbacService, ApiKeyService, OtpService, AuditService, REST controllers, Flyway V10–V11)
+- ✅ Phase 3 — Subscription Service (complete: SubscriptionAggregate, Event Sourcing, Outbox, CQRS projections, Kafka Saga, REST controllers)
+- ✅ Phase 4 — Billing Service (complete: double-entry ledger, idempotent charging, Kafka Saga, refund, REST controllers)
+- ⬜ Phase 5 — Content Service
+- ⬜ Phase 6 — Campaign + Notification Services
+- ⬜ Phase 7 — Analytics + AI Services
+- ⬜ Phase 8 — API Gateway + Operator Service
+- ⬜ Phase 9 — CI/CD + Kubernetes
+
 ---
 
 ### Phase 1 — Project Skeleton & Infrastructure
@@ -122,7 +134,11 @@ This project replicates that exact domain: a backend platform that allows multip
 
 #### Step 2: Write Docker Compose for Local Development
 
-- Define services: PostgreSQL (7 databases — auth, operator, subscription, billing, campaign, notification, ai) with PGVector extension enabled, MongoDB, Redis, Kafka (KRaft mode, no Zookeeper), RabbitMQ (with management UI), Zipkin
+- Define services: PostgreSQL (7 databases — auth, operator, subscription, billing, campaign, notification, ai) with PGVector extension enabled, MongoDB, Redis, Kafka (KRaft mode — no Zookeeper), RabbitMQ (with management UI), Zipkin
+- **Why Kafka KRaft, not Zookeeper?**
+  - **RAM**: Zookeeper is a separate Java process requiring its own JVM heap (256–512MB idle). On a 6GB VPS, that's ~300MB you can't afford. KRaft eliminates Zookeeper entirely — Kafka handles metadata consensus internally within the same broker process. One fewer container, one fewer JVM.
+  - **Architecture**: Apache Kafka deprecated Zookeeper in Kafka 3.5 (2023) and removed it entirely in Kafka 4.0 (early 2025). KRaft is now the default and only supported mode. Zookeeper was an operational burden — a separate distributed system to deploy, monitor, and tune alongside Kafka. It introduced split-brain risks, added latency to controller elections, and limited partition scalability (~200K partition ceiling). KRaft moved metadata management into Kafka's own Raft consensus protocol, resulting in faster broker startup, faster controller failover, simpler operations, and a single system to manage instead of two.
+  - Use the `apache/kafka` Docker image (Kafka 4.x) which is KRaft-native — no Zookeeper image needed in Docker Compose at all
 - Set up named volumes for all stateful services
 - Create an `.env` file for configurable ports, credentials, topic names, and `OPENROUTER_API_KEY` for the AI Service
 - Add a health check for each infrastructure service
@@ -795,7 +811,9 @@ Each Spring Boot service runs on a JVM that needs careful tuning to stay within 
 
 - **Kafka KRaft (400MB limit)**:
   - `KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m"` — Kafka's default 1GB is overkill for a single-broker dev/staging setup
-  - KRaft mode (no Zookeeper) saves ~300MB vs Kafka + Zookeeper
+  - KRaft mode eliminates Zookeeper entirely — saves ~300MB (one fewer JVM process) and reduces operational complexity (no split-brain, no Zookeeper monitoring)
+  - Use `apache/kafka:4.0` image or later — KRaft is the only mode, Zookeeper support has been fully removed
+  - Configure `KAFKA_PROCESS_ROLES: broker,controller` and `KAFKA_CONTROLLER_QUORUM_VOTERS` for single-node KRaft
   - `log.retention.hours: 168` (7 days — don't accumulate unlimited log segments)
   - `log.segment.bytes: 52428800` (50MB segments)
   - `num.partitions: 3` (not 12 — fewer partitions = less memory for partition metadata)
@@ -972,7 +990,7 @@ The 6GB VPS runs Docker Compose for actual production. This phase exists in para
   │               ├── mongodb-statefulset.yaml
   │               ├── redis-statefulset.yaml
   │               ├── rabbitmq-statefulset.yaml
-  │               └── kafka/              (Strimzi CRDs)
+  │               └── kafka/              (Strimzi KRaft CRDs — no Zookeeper)
   ├── operators/
   │   ├── strimzi-kafka-operator.yaml
   │   └── rabbitmq-cluster-operator.yaml
@@ -1076,30 +1094,65 @@ The 6GB VPS runs Docker Compose for actual production. This phase exists in para
   - `StatefulSet` with 1 replica, PVC 2Gi
   - ConfigMap for `redis.conf`: `maxmemory`, `maxmemory-policy`, persistence settings
   - Or use Redis Sentinel / Redis Cluster for HA (3 replicas)
-- **Kafka** (via Strimzi Operator):
-  - Install Strimzi Kafka Operator in the cluster
-  - Define a `Kafka` Custom Resource:
+- **Kafka** (via Strimzi Operator — KRaft mode, no Zookeeper):
+  - Install Strimzi Kafka Operator (v0.38+) in the cluster — this version supports KRaft natively
+  - **Why KRaft in K8s too**: Consistency with the Docker Compose deployment (both run KRaft), eliminates the Zookeeper StatefulSet (saves 3 pods × ~256MB each = ~768MB cluster-wide), faster controller failover, and Zookeeper support is removed from Kafka 4.0 anyway — there's no reason to use a deprecated component in a new project
+  - Define a `KafkaNodePool` and `Kafka` Custom Resource with KRaft enabled:
     ```yaml
+    apiVersion: kafka.strimzi.io/v1beta2
+    kind: KafkaNodePool
+    metadata:
+      name: nexusvas-brokers
+      labels:
+        strimzi.io/cluster: nexusvas-kafka
+    spec:
+      replicas: 3
+      roles:
+        - controller
+        - broker
+      storage:
+        type: persistent-claim
+        size: 20Gi
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+    ---
     apiVersion: kafka.strimzi.io/v1beta2
     kind: Kafka
     metadata:
       name: nexusvas-kafka
+      annotations:
+        strimzi.io/kraft: enabled
+        strimzi.io/node-pools: enabled
     spec:
       kafka:
-        replicas: 3
-        storage:
-          type: persistent-claim
-          size: 20Gi
+        version: "3.8.0"
+        metadataVersion: "3.8-IV0"
+        listeners:
+          - name: plain
+            port: 9092
+            type: internal
+            tls: false
+          - name: tls
+            port: 9093
+            type: internal
+            tls: true
         config:
           num.partitions: 6
           default.replication.factor: 3
+          min.insync.replicas: 2
           log.retention.hours: 168
-      zookeeper:          # or use KRaft for newer Strimzi versions
-        replicas: 3
-        storage:
-          type: persistent-claim
-          size: 5Gi
+          offsets.topic.replication.factor: 3
+          transaction.state.log.replication.factor: 3
+          transaction.state.log.min.isr: 2
+      entityOperator:
+        topicOperator: {}
     ```
+  - Note: No `spec.zookeeper` section at all — Strimzi with the `strimzi.io/kraft: enabled` annotation manages the entire cluster using KRaft consensus. The `KafkaNodePool` CRD defines nodes that serve both `controller` and `broker` roles (combined mode), which is simpler for a 3-node cluster. For larger deployments, separate the roles into dedicated controller and broker node pools.
   - Define `KafkaTopic` CRDs for each topic: `subscription-events`, `billing-events`, `content-events`, `campaign-events` — with partition count and replication factor
 - **RabbitMQ** (via RabbitMQ Cluster Operator):
   - Install the RabbitMQ Cluster Operator
@@ -1154,17 +1207,17 @@ The 6GB VPS runs Docker Compose for actual production. This phase exists in para
 - `values-dev.yaml`:
   - All services: `replicas: 1`, lower resource limits, debug logging enabled
   - PostgreSQL/MongoDB: small PVCs (5Gi)
-  - Kafka: single broker, single partition
+  - Kafka: single KRaft node (combined controller + broker role), single partition
   - HPA disabled
   - Zipkin enabled for tracing
 - `values-staging.yaml`:
   - All services: `replicas: 2`, production-like resource limits
   - Full HPA enabled with conservative thresholds
-  - Kafka: 3 brokers, 3 partitions
+  - Kafka: 3 KRaft nodes (combined roles), 3 partitions
   - Prometheus + Grafana enabled
 - `values-prod.yaml`:
   - All services: `replicas: 2` minimum, aggressive HPA
-  - Kafka: 3 brokers, 6 partitions, replication factor 3
+  - Kafka: 3 KRaft nodes (combined roles), 6 partitions, replication factor 3, `min.insync.replicas: 2`
   - PostgreSQL: consider managed (RDS) for automated backups and failover
   - Pod Disruption Budgets: `minAvailable: 1` on all services — guarantees at least 1 pod survives during rolling updates or node drains
   - Resource limits tuned per service based on load test results

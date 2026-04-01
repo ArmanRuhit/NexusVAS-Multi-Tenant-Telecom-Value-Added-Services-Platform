@@ -1,0 +1,109 @@
+type Query {
+    dashboardSummary(days: Int = 30): DashboardSummary!
+    topProducts(days: Int = 30, limit: Int = 10): [ProductRevenue!]!
+    subscriptionsByProduct(days: Int = 30): [ProductEventCount!]!
+    
+    # Time-series analytics
+    revenueTimeline(days: Int = 30, granularity: Granularity = DAILY): [TimeSeriesPoint!]!
+    subscriptionTimeline(days: Int = 30, granularity: Granularity = DAILY): [SubscriptionTimelinePoint!]!
+    
+    # Subscriber analytics
+    subscriberMetrics: SubscriberMetrics!
+    churnRiskSegments: [ChurnRiskSegment!]!
+    
+    # Campaign analytics
+    campaignPerformance(campaignId: String): CampaignPerformance
+    topCampaigns(limit: Int = 10): [CampaignPerformance!]!
+}
+
+enum Granularity {
+    HOURLY
+    DAILY
+    WEEKLY
+    MONTHLY
+}
+
+type DashboardSummary {
+    newSubscriptions: Int!
+    cancellations: Int!
+    chargesSucceeded: Int!
+    chargesFailed: Int!
+    totalRevenue: Float!
+    netSubscriptions: Int!
+    churnRate: Float!
+    arpu: Float!
+}
+
+type ProductRevenue {
+    productId: String!
+    productName: String
+    revenue: Float!
+    charges: Int!
+    activeSubscribers: Int!
+}
+
+type ProductEventCount {
+    productId: String!
+    productName: String
+    eventType: String!
+    count: Int!
+}
+
+type TimeSeriesPoint {
+    timestamp: String!
+    value: Float!
+    label: String
+}
+
+type SubscriptionTimelinePoint {
+    timestamp: String!
+    newSubscriptions: Int!
+    cancellations: Int!
+    netChange: Int!
+    totalActive: Int!
+}
+
+type SubscriberMetrics {
+    totalActive: Int!
+    newThisMonth: Int!
+    churnedThisMonth: Int!
+    averageTenureDays: Float!
+    byProduct: [ProductSubscriberCount!]!
+    byRegion: [RegionSubscriberCount!]!
+}
+
+type ProductSubscriberCount {
+    productId: String!
+    productName: String
+    count: Int!
+    percentage: Float!
+}
+
+type RegionSubscriberCount {
+    region: String!
+    count: Int!
+    percentage: Float!
+}
+
+type ChurnRiskSegment {
+    riskLevel: String!
+    count: Int!
+    percentage: Float!
+    avgTenureDays: Float!
+    avgRevenue: Float!
+}
+
+type CampaignPerformance {
+    campaignId: String!
+    campaignName: String!
+    totalTargeted: Int!
+    totalSent: Int!
+    totalDelivered: Int!
+    totalClicked: Int!
+    totalConverted: Int!
+    deliveryRate: Float!
+    clickRate: Float!
+    conversionRate: Float!
+    cost: Float!
+    roi: Float!
+}
