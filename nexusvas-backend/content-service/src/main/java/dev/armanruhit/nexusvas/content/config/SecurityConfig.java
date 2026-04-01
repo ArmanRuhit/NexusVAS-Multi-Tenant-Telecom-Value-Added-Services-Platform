@@ -6,9 +6,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import reactor.core.publisher.Flux;
+
+import java.util.List;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -19,12 +22,15 @@ public class SecurityConfig {
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
-        ReactiveJwtGrantedAuthoritiesConverter authoritiesConverter = new ReactiveJwtGrantedAuthoritiesConverter();
-        authoritiesConverter.setAuthorityPrefix("PERMISSION_");
-        authoritiesConverter.setAuthoritiesClaimName("permissions");
-
         ReactiveJwtAuthenticationConverter jwtConverter = new ReactiveJwtAuthenticationConverter();
-        jwtConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        jwtConverter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            List<String> permissions = jwt.getClaimAsStringList("permissions");
+            if (permissions == null) {
+                return Flux.empty();
+            }
+            return Flux.fromIterable(permissions)
+                .map(p -> new SimpleGrantedAuthority("PERMISSION_" + p));
+        });
 
         return http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
